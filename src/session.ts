@@ -3,6 +3,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 export interface SessionEntry {
   server: Server;
@@ -17,21 +19,48 @@ function isHeadless(): boolean {
   return !process.env.DISPLAY;
 }
 
-function getConnectionConfig() {
-  return {
-    browser: {
-      browserName: 'chromium' as const,
-      isolated: true,
-      launchOptions: { headless: isHeadless(), channel: 'chromium' },
-    },
+/**
+ * Sanitize sessionId for use as a directory name.
+ * Allows alphanumeric, hyphens, underscores, and dots.
+ */
+function sanitizeSessionId(sessionId: string): string {
+  return sessionId.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+/**
+ * Returns the base directory for persistent session data, or undefined for ephemeral mode.
+ * Set PLAYWRIGHT_USER_DATA_DIR to a directory path to enable persistence.
+ */
+function getPersistentBaseDir(): string | undefined {
+  return process.env.PLAYWRIGHT_USER_DATA_DIR || undefined;
+}
+
+function getConnectionConfig(sessionId?: string) {
+  const baseDir = getPersistentBaseDir();
+  const persistent = !!baseDir && !!sessionId;
+
+  const config: Record<string, unknown> = {
+    browserName: 'chromium' as const,
+    launchOptions: { headless: isHeadless(), channel: 'chromium' },
   };
+
+  if (persistent) {
+    const dir = join(baseDir!, sanitizeSessionId(sessionId!));
+    mkdirSync(dir, { recursive: true });
+    config.userDataDir = dir;
+    config.isolated = false;
+  } else {
+    config.isolated = true;
+  }
+
+  return { browser: config };
 }
 
 export async function getOrCreateClient(sessionId: string): Promise<Client> {
   const existing = sessions.get(sessionId);
   if (existing) return existing.client;
 
-  const server = await createConnection(getConnectionConfig());
+  const server = await createConnection(getConnectionConfig(sessionId));
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
 
   await server.connect(serverTransport);
