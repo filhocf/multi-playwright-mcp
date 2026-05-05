@@ -1,7 +1,7 @@
 {
-  "name": "@filhocf/multi-playwright-mcp",
-  "version": "1.1.0",
-  "description": "Multi-session wrapper around @playwright/mcp — run multiple isolated browsers via a single MCP server",
+  "name": "multi-playwright-mcp",
+  "version": "1.2.0",
+  "description": "Multi-session wrapper around @playwright/mcp \u2014 run multiple isolated browsers via a single MCP server",
   "main": "dist/index.js",
   "bin": {
     "multi-playwright-mcp": "dist/index.js"
@@ -14,32 +14,32 @@
   "keywords": [
     "mcp",
     "playwright",
+    "multi-session",
     "browser",
-    "automation",
-    "multi-session"
+    "automation"
   ],
   "author": "Claudio Ferreira Filho <filhocf@gmail.com>",
   "license": "MIT",
   "type": "commonjs",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/filhocf/multi-playwright-mcp.git"
-  },
   "files": [
     "dist/**/*.js",
     "README.md",
     "LICENSE"
   ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
+    "registry": "https://registry.npmjs.org/",
     "access": "public"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@playwright/mcp": "^0.0.68"
+    "@playwright/mcp": "^0.0.73"
   },
   "devDependencies": {
     "@types/node": "^25.4.0",
     "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/filhocf/multi-playwright-mcp.git"
   }
 }

@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface SessionEntry {
@@ -53,7 +53,18 @@ function getConnectionConfig(sessionId?: string) {
     config.isolated = true;
   }
 
-  return { browser: config };
+  // Load storageState if a saved state file exists for this session
+  if (sessionId && baseDir) {
+    const stateFile = join(baseDir!, `${sanitizeSessionId(sessionId)}.state.json`);
+    if (existsSync(stateFile)) {
+      config.contextOptions = { storageState: stateFile };
+    }
+  }
+
+  return {
+    browser: config,
+    capabilities: ['core', 'core-navigation', 'core-tabs', 'core-input', 'core-install', 'network', 'storage'] as any[],
+  };
 }
 
 export async function getOrCreateClient(sessionId: string): Promise<Client> {
@@ -74,7 +85,8 @@ export async function getOrCreateClient(sessionId: string): Promise<Client> {
 
 /** Discover available tools from a temporary inner connection. */
 export async function discoverTools(): Promise<Tool[]> {
-  const server = await createConnection(getConnectionConfig());
+  const config = getConnectionConfig();
+  const server = await createConnection(config);
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
 
