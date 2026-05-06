@@ -125,22 +125,28 @@ export async function closeSession(sessionId: string): Promise<void> {
 
   const baseDir = getPersistentBaseDir();
   if (baseDir && sessionId) {
-    const { unlinkSync, readdirSync } = await import('node:fs');
-    const { execSync } = await import('node:child_process');
+    const { unlink } = await import('node:fs/promises');
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileAsync = promisify(execFile);
     const dir = join(baseDir, sanitizeSessionId(sessionId));
 
-    // Kill any lingering Chromium processes using this profile
-    try {
-      execSync(`pkill -f "user-data-dir=${dir}" 2>/dev/null`, { timeout: 3000 });
-    } catch { /* ignore - process may already be gone */ }
+    // Kill any lingering Chromium processes using this profile (Unix only)
+    if (process.platform !== 'win32') {
+      try {
+        await execFileAsync('pkill', ['-f', `user-data-dir=${dir}`], { timeout: 3000 });
+      } catch { /* ignore - process may already be gone */ }
+    }
 
     // Wait for process to die and release locks
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Remove lock files
-    for (const lock of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
-      try { unlinkSync(join(dir, lock)); } catch { /* ignore */ }
-    }
+    // Remove lock files concurrently
+    await Promise.all(
+      ['SingletonLock', 'SingletonSocket', 'SingletonCookie'].map(async (lock) => {
+        try { await unlink(join(dir, lock)); } catch { /* ignore */ }
+      })
+    );
   }
 }
 
