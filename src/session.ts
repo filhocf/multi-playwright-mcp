@@ -3,8 +3,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 export interface SessionEntry {
   server: Server;
@@ -28,11 +29,16 @@ function sanitizeSessionId(sessionId: string): string {
 }
 
 /**
- * Returns the base directory for persistent session data, or undefined for ephemeral mode.
- * Set PLAYWRIGHT_USER_DATA_DIR to a directory path to enable persistence.
+ * Returns the base directory for persistent session data.
+ * Defaults to ~/.local/share/playwright-sessions/ for login persistence.
+ * Set PLAYWRIGHT_USER_DATA_DIR to override, or set to empty string to disable persistence.
  */
 function getPersistentBaseDir(): string | undefined {
-  return process.env.PLAYWRIGHT_USER_DATA_DIR || undefined;
+  const env = process.env.PLAYWRIGHT_USER_DATA_DIR;
+  if (env === '') return undefined; // explicitly disabled
+  if (env) return env;
+  // Default: persist sessions for login reuse
+  return join(homedir(), '.local', 'share', 'playwright-sessions');
 }
 
 function getConnectionConfig(sessionId?: string) {

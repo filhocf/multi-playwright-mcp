@@ -96,8 +96,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   const { sessionId: _, ...innerArgs } = args as Record<string, unknown>;
   const client = await getOrCreateClient(sessionId);
+
+  // Auto-cancel excess file choosers before executing any tool.
+  // Sites like Gemini trigger many file chooser events that accumulate and block
+  // all other operations. Keep only the latest one so browser_file_upload still works.
+  if (name !== 'browser_file_upload') {
+    await cancelExcessFileChoosers(client);
+  }
+
   return await client.callTool({ name, arguments: innerArgs });
 });
+
+/**
+ * Cancel all but the most recent file chooser modal state.
+ * If the tool being called is NOT browser_file_upload, cancel ALL of them
+ * so other tools aren't blocked by stale file choosers.
+ */
+async function cancelExcessFileChoosers(client: import('@modelcontextprotocol/sdk/client/index.js').Client): Promise<void> {
+  // Call browser_file_upload with no paths (cancels the file chooser) in a loop
+  // until there are no more file choosers blocking. Max 50 iterations as safety.
+  for (let i = 0; i < 50; i++) {
+    try {
+      const result = await client.callTool({ name: 'browser_file_upload', arguments: {} });
+      // If the tool returns an error about no file chooser visible, we're done
+      const text = (result as any)?.content?.[0]?.text ?? '';
+      if (text.includes('No file chooser visible') || text.includes('does not handle the modal state')) {
+        break;
+      }
+    } catch {
+      // No more file choosers or tool not available
+      break;
+    }
+  }
+}
 
 async function main() {
   const transport = new StdioServerTransport();
