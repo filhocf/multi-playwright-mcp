@@ -118,6 +118,30 @@ export async function closeSession(sessionId: string): Promise<void> {
   await entry.client.close();
   await entry.server.close();
   sessions.delete(sessionId);
+
+  // server.close() doesn't always terminate the Chromium process.
+  // Wait briefly then clean up stale lock files so the profile can be reused.
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  const baseDir = getPersistentBaseDir();
+  if (baseDir && sessionId) {
+    const { unlinkSync, readdirSync } = await import('node:fs');
+    const { execSync } = await import('node:child_process');
+    const dir = join(baseDir, sanitizeSessionId(sessionId));
+
+    // Kill any lingering Chromium processes using this profile
+    try {
+      execSync(`pkill -f "user-data-dir=${dir}" 2>/dev/null`, { timeout: 3000 });
+    } catch { /* ignore - process may already be gone */ }
+
+    // Wait for process to die and release locks
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Remove lock files
+    for (const lock of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+      try { unlinkSync(join(dir, lock)); } catch { /* ignore */ }
+    }
+  }
 }
 
 export async function closeAllSessions(): Promise<void> {
