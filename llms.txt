@@ -1,0 +1,46 @@
+# multi-playwright-mcp
+
+> Multi-session wrapper around @playwright/mcp — run multiple isolated browser instances via a single MCP server.
+
+## Overview
+
+Extends Microsoft's official Playwright MCP server with a `sessionId` parameter on every tool. Each unique sessionId gets its own isolated browser context (cookies, storage, viewport). Enables parallel browser automation from a single MCP connection.
+
+## Key Features
+
+- All 40+ Playwright MCP tools available with added `sessionId` isolation
+- Multiple concurrent browsers (e.g., research in one, testing in another)
+- Session lifecycle: auto-created on first use, explicit close via `close_session`
+- `list_sessions`: see all active browser sessions
+- Compatible with any MCP client (Claude Code, Kiro CLI, etc.)
+
+## Tools (inherited from @playwright/mcp + additions)
+
+- browser_navigate, browser_click, browser_type, browser_snapshot, browser_screenshot
+- browser_tabs (list/new/close/select), browser_evaluate, browser_console_messages
+- browser_network_requests, browser_cookie_*, browser_localstorage_*
+- browser_file_upload, browser_drag, browser_drop, browser_route
+- list_sessions, close_session (multi-session management)
+
+## Installation
+
+```bash
+npm install -g multi-playwright-mcp
+# or run directly:
+npx multi-playwright-mcp
+```
+
+## Configuration (MCP client)
+
+```json
+{
+  "command": "node",
+  "args": ["/path/to/multi-playwright-mcp/dist/index.js"],
+  "env": {"DISPLAY": ":1"}
+}
+```
+
+## Links
+
+- GitHub: https://github.com/filhocf/multi-playwright-mcp
+- License: MIT
