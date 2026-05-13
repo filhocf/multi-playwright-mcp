@@ -41,7 +41,17 @@ function getPersistentBaseDir(): string | undefined {
   return join(homedir(), '.local', 'share', 'playwright-sessions');
 }
 
+/**
+ * Returns CDP endpoint URL if configured.
+ * Set PLAYWRIGHT_CDP_ENDPOINT to connect to an existing Chromium instance.
+ * Example: PLAYWRIGHT_CDP_ENDPOINT=http://localhost:9222
+ */
+function getCdpEndpoint(): string | undefined {
+  return process.env.PLAYWRIGHT_CDP_ENDPOINT || undefined;
+}
+
 function getConnectionConfig(sessionId?: string) {
+  const cdpEndpoint = getCdpEndpoint();
   const baseDir = getPersistentBaseDir();
   const persistent = !!baseDir && !!sessionId;
 
@@ -50,7 +60,13 @@ function getConnectionConfig(sessionId?: string) {
     launchOptions: { headless: isHeadless(), channel: 'chromium' },
   };
 
-  if (persistent) {
+  // CDP mode: connect to existing browser, ignore launch/persistence options
+  if (cdpEndpoint) {
+    config.cdpEndpoint = cdpEndpoint;
+    config.cdpTimeout = parseInt(process.env.PLAYWRIGHT_CDP_TIMEOUT || '30000', 10);
+    // Don't set userDataDir or isolated — CDP attaches to existing browser
+    delete config.launchOptions;
+  } else if (persistent) {
     const dir = join(baseDir!, sanitizeSessionId(sessionId!));
     mkdirSync(dir, { recursive: true });
     config.userDataDir = dir;
@@ -59,8 +75,8 @@ function getConnectionConfig(sessionId?: string) {
     config.isolated = true;
   }
 
-  // Load storageState if a saved state file exists for this session
-  if (sessionId && baseDir) {
+  // Load storageState if a saved state file exists for this session (non-CDP only)
+  if (!cdpEndpoint && sessionId && baseDir) {
     const stateFile = join(baseDir!, `${sanitizeSessionId(sessionId)}.state.json`);
     if (existsSync(stateFile)) {
       config.contextOptions = { storageState: stateFile };
