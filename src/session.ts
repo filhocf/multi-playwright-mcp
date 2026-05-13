@@ -6,13 +6,27 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { chromium, type Browser, type BrowserContext } from 'playwright';
 
 export interface SessionEntry {
   server: Server;
   client: Client;
+  context?: BrowserContext;
 }
 
 const sessions = new Map<string, SessionEntry>();
+let sharedBrowser: Browser | null = null;
+
+/**
+ * Get or create the shared CDP browser connection.
+ * All sessions share one browser but get isolated contexts.
+ */
+async function getSharedBrowser(): Promise<Browser> {
+  if (sharedBrowser?.isConnected()) return sharedBrowser;
+  const endpoint = getCdpEndpoint()!;
+  sharedBrowser = await chromium.connectOverCDP(endpoint);
+  return sharedBrowser;
+}
 
 function isHeadless(): boolean {
   const env = process.env.PLAYWRIGHT_HEADLESS;
@@ -93,15 +107,26 @@ export async function getOrCreateClient(sessionId: string): Promise<Client> {
   const existing = sessions.get(sessionId);
   if (existing) return existing.client;
 
-  const server = await createConnection(getConnectionConfig(sessionId));
-  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  const cdpEndpoint = getCdpEndpoint();
+  let server: Server;
+  let context: BrowserContext | undefined;
 
+  if (cdpEndpoint) {
+    // CDP mode: each session gets its own BrowserContext (isolated tabs)
+    const browser = await getSharedBrowser();
+    context = await browser.newContext();
+    server = await createConnection(getConnectionConfig(sessionId), () => Promise.resolve(context!));
+  } else {
+    server = await createConnection(getConnectionConfig(sessionId));
+  }
+
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
 
   const client = new Client({ name: `session-${sessionId}`, version: '1.0.0' });
   await client.connect(clientTransport);
 
-  sessions.set(sessionId, { server, client });
+  sessions.set(sessionId, { server, client, context });
   return client;
 }
 
@@ -133,6 +158,12 @@ export async function closeSession(sessionId: string): Promise<void> {
 
   await entry.client.close();
   await entry.server.close();
+
+  // CDP mode: close the isolated context (closes its tabs)
+  if (entry.context) {
+    await entry.context.close().catch(() => {});
+  }
+
   sessions.delete(sessionId);
 
   // server.close() doesn't always terminate the Chromium process.
