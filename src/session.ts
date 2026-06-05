@@ -112,9 +112,10 @@ export async function getOrCreateClient(sessionId: string): Promise<Client> {
   let context: BrowserContext | undefined;
 
   if (cdpEndpoint) {
-    // CDP mode: each session gets its own BrowserContext (isolated tabs)
+    // CDP mode: reuse the browser's default context (preserves logins/cookies)
+    // Each session gets its own tabs but shares auth state
     const browser = await getSharedBrowser();
-    context = await browser.newContext();
+    context = browser.contexts()[0] ?? await browser.newContext();
     server = await createConnection(getConnectionConfig(sessionId), () => Promise.resolve(context!));
   } else {
     server = await createConnection(getConnectionConfig(sessionId));
@@ -159,8 +160,15 @@ export async function closeSession(sessionId: string): Promise<void> {
   await entry.client.close();
   await entry.server.close();
 
-  // CDP mode: close the isolated context (closes its tabs)
-  if (entry.context) {
+  // CDP mode: don't close the shared default context (other sessions use it)
+  // Only close contexts that WE created (non-default)
+  if (entry.context && getCdpEndpoint()) {
+    const browser = sharedBrowser;
+    const isDefault = browser && browser.contexts()[0] === entry.context;
+    if (!isDefault) {
+      await entry.context.close().catch(() => {});
+    }
+  } else if (entry.context) {
     await entry.context.close().catch(() => {});
   }
 
