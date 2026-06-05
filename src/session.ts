@@ -19,12 +19,28 @@ let sharedBrowser: Browser | null = null;
 
 /**
  * Get or create the shared CDP browser connection.
- * All sessions share one browser but get isolated contexts.
+ * All sessions share one browser but get isolated tabs within the default context.
+ * Fails with a clear message if the browser is not running.
  */
 async function getSharedBrowser(): Promise<Browser> {
   if (sharedBrowser?.isConnected()) return sharedBrowser;
-  const endpoint = getCdpEndpoint()!;
-  sharedBrowser = await chromium.connectOverCDP(endpoint);
+  const endpoint = getCdpEndpoint();
+  if (!endpoint) {
+    throw new Error(
+      'PLAYWRIGHT_CDP_ENDPOINT not set. Start Chromium with CDP enabled:\n' +
+      '  chromium --remote-debugging-port=9222\n' +
+      'Then set: PLAYWRIGHT_CDP_ENDPOINT=http://localhost:9222'
+    );
+  }
+  try {
+    sharedBrowser = await chromium.connectOverCDP(endpoint);
+  } catch (err) {
+    throw new Error(
+      `Cannot connect to browser at ${endpoint}. Is Chromium running with CDP?\n` +
+      '  Start it: chromium --remote-debugging-port=9222\n' +
+      `  Original error: ${(err as Error).message}`
+    );
+  }
   return sharedBrowser;
 }
 
@@ -118,7 +134,10 @@ export async function getOrCreateClient(sessionId: string): Promise<Client> {
     context = browser.contexts()[0] ?? await browser.newContext();
     server = await createConnection(getConnectionConfig(sessionId), () => Promise.resolve(context!));
   } else {
-    server = await createConnection(getConnectionConfig(sessionId));
+    // Non-CDP: still require CDP — we never want Chrome for Testing (no logins)
+    const browser = await getSharedBrowser(); // will throw with instructions
+    context = browser.contexts()[0] ?? await browser.newContext();
+    server = await createConnection(getConnectionConfig(sessionId), () => Promise.resolve(context!));
   }
 
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
