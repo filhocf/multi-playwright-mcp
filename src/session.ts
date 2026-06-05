@@ -20,25 +20,36 @@ let sharedBrowser: Browser | null = null;
 /**
  * Get or create the shared CDP browser connection.
  * All sessions share one browser but get isolated tabs within the default context.
- * Fails with a clear message if the browser is not running.
+ * Auto-launches Chromium with CDP if not already running.
  */
 async function getSharedBrowser(): Promise<Browser> {
   if (sharedBrowser?.isConnected()) return sharedBrowser;
-  const endpoint = getCdpEndpoint();
-  if (!endpoint) {
-    throw new Error(
-      'PLAYWRIGHT_CDP_ENDPOINT not set. Start Chromium with CDP enabled:\n' +
-      '  chromium --remote-debugging-port=9222\n' +
-      'Then set: PLAYWRIGHT_CDP_ENDPOINT=http://localhost:9222'
-    );
-  }
+  const endpoint = getCdpEndpoint() || 'http://localhost:9222';
+
   try {
     sharedBrowser = await chromium.connectOverCDP(endpoint);
-  } catch (err) {
+  } catch {
+    // Browser not running — launch it
+    const { spawn } = await import('node:child_process');
+    const port = new URL(endpoint).port || '9222';
+    const bin = process.env.PLAYWRIGHT_CHROMIUM_BIN || 'chromium';
+    const child = spawn(bin, [`--remote-debugging-port=${port}`], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+
+    // Wait for CDP to become available (up to 10s)
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      try {
+        sharedBrowser = await chromium.connectOverCDP(endpoint);
+        return sharedBrowser;
+      } catch { /* retry */ }
+    }
     throw new Error(
-      `Cannot connect to browser at ${endpoint}. Is Chromium running with CDP?\n` +
-      '  Start it: chromium --remote-debugging-port=9222\n' +
-      `  Original error: ${(err as Error).message}`
+      `Launched ${bin} but CDP still unreachable at ${endpoint} after 10s.\n` +
+      'Check that the chromium binary is in PATH or set PLAYWRIGHT_CHROMIUM_BIN.'
     );
   }
   return sharedBrowser;
